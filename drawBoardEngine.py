@@ -473,6 +473,8 @@ class Board():
         for component in (self.components + self.testPoints):
             component.setCustomCaseScale(scale)
 
+#### camcad and gencad
+'''
 if __name__ == '__main__':
     ## pygame
     WIN = pygame.display.set_mode((Board.WIDTH, Board.HEIGHT))
@@ -560,6 +562,103 @@ if __name__ == '__main__':
         ## rotation test
         pygame.draw.circle(board.boardLayer, Board.RED, board.screenPoint(board.boardLayer, board.midPoint), 10)
         pygame.draw.circle(board.boardLayer, Board.BLUE, coords, 10)
+
+        ## 4. put everything on one surface
+        board.renderImage(WIN)
+
+        ## display image
+        pygame.display.update()
+        #run = False
+
+    pygame.quit()
+'''
+
+### odb++
+if __name__ == '__main__':
+    ## pygame
+    WIN = pygame.display.set_mode((Board.WIDTH, Board.HEIGHT))
+    clock = pygame.time.Clock()
+
+    run = True
+    move = False
+    isMouseRelPosCalledFirst = False
+    moveVector = 0, 0
+    coords = 0,0
+
+    ## load components data cad file (tgz)
+    components, nets, holes, boardOutlines, _, _ = schematicLoader.SchematicLoader.loadSchematic('odbv7-1.tgz')
+    board = Board(components, nets, holes, boardOutlines, 'TP')
+    board.setComponentsCustomScale(40)
+
+    ## set drawn side
+    sideQueue = ['B', 'T']
+    side = sideQueue[1]
+
+    #board.holes = []
+    for component in board.components:
+        if component.name == 'DZ1':
+            print(component.name, component.coords)
+
+    while run:
+        clock.tick(Board.FPS)
+
+        ## handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                ## moving layer
+                pygame.mouse.set_cursor(pygame.cursors.Cursor(pygame.SYSTEM_CURSOR_HAND))
+                move = True
+
+                ## finding name of clicked component
+                mouseCoords = pygame.mouse.get_pos()
+                clickedComponent, isHole = board.findComponentUsingClick(board.boardLayer, mouseCoords, side)
+                coords = board.inverseScreenPoint(board.boardLayer, mouseCoords)
+                coords = board.screenPoint(board.boardLayer, coords)
+                if clickedComponent:
+                    print(clickedComponent, isHole)
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                ## moving layer
+                move = False
+                pygame.mouse.set_cursor(pygame.cursors.Cursor())
+                isMouseRelPosCalledFirst = True
+            elif event.type == pygame.KEYDOWN:
+                ## zooming
+                if event.key == pygame.K_PAGEUP:
+                    deltaVector = board.zoom(coords, '+')
+                    moveVector = board.getSetMoveVector(deltaVector)
+                elif event.key == pygame.K_PAGEDOWN:
+                    deltaVector = board.zoom(coords, '-')
+                    moveVector = board.getSetMoveVector(deltaVector)
+                elif event.key == pygame.K_SEMICOLON:
+                    ## switch sides with "shift register" cycle
+                    sideQueue.append(sideQueue.pop(0))
+                    side = sideQueue[0]
+
+        ## handle movement
+        if move and isMouseRelPosCalledFirst:
+            pygame.mouse.get_rel()
+            isMouseRelPosCalledFirst = False
+        elif move:
+            currentPosRel = pygame.mouse.get_rel()
+            moveVector = board.getSetMoveVector(currentPosRel)
+
+        ## 1. create surfaces with PCB
+        board.createLayers()
+
+        ## 2. update marker coords
+        markerCoords, markerSide = board.findComponentUsingName(board.boardLayer, 'TP617')
+        if markerSide != side:
+            markerSide = None
+        markerData = markerSide, markerCoords
+
+        angle = 0
+        board.setRotationAngle(angle)
+
+        ## 3. update created surfaces
+        board.updateLayers((side, markerData), (pygame.mouse.get_pos(),  Board.GRAY), [])
 
         ## 4. put everything on one surface
         board.renderImage(WIN)

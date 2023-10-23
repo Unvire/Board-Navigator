@@ -23,9 +23,9 @@ class DrawArc():
         layer = pygame.Surface((self.WIDTH, self.HEIGHT))
         #######################################
 
-        point1 = (263, 200)
-        point2 = (325, 261)
-        point3 = (264, 261)
+        point1 = (50.9978, 35.1377)
+        point2 = (24.6355, 61.5)
+        point3 = (61.5, 24.6355)
 
         rect, startAngle, endAngle = mathFunctions.threePointToPygameArc(point1, point2, point3)
         print(math.degrees(startAngle), math.degrees(endAngle))

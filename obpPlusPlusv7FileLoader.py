@@ -23,11 +23,13 @@ class OdbPlusPlusv7FileLoader():
         Opens a .tgz file and returns dict of components, dict of nets, dict of holes and list of board vertexes. For manual processig of file use
         (openFile, getComponents, getNets, getHoles, getBoardOutlines methods)
         '''
-        self.getFile(name, path)
-        components, pins = self.getComponents()
+        self.getFile(name, path)        
+        boardOutlines = self.getBoardOutlines()
+        maxX = self.findComponentLayerScale()
+        scalingFactor = boardOutlines['AREA'][1][0] / maxX      
+        components, pins = self.getComponents(scalingFactor=scalingFactor)
         nets = self.getNets(pins)
         holes = self.getHoles()
-        boardOutlines = self.getBoardOutlines()
 
         return components, nets, holes, boardOutlines, None, None
 
@@ -41,7 +43,7 @@ class OdbPlusPlusv7FileLoader():
         self.holesFile = 'odbjob_v7/steps/stp/layers/drill/features'
         self.dimensionFile = 'odbjob_v7/steps/stp/layers/outline/features'
 
-    def getComponents(self, testPointChars='TP'):
+    def getComponents(self, scalingFactor=1, testPointChars='TP'):
         '''
         Opens files inside .tgz file. Extracts data of components from 'odbjob_v7/steps/stp/layers/comp_+_bot/components' and 'odbjob_v7/steps/stp/layers/comp_+_top/components'.
             testPointChars - string that is common for all testpoints
@@ -59,7 +61,7 @@ class OdbPlusPlusv7FileLoader():
                     for i, line in enumerate(fileLines):
                         if '# CMP ' in line:
                             buffer = next(fileLines).split(' ')
-                            componentCoords = float(buffer[2]), float(buffer[3])
+                            componentCoords = float(buffer[2]) * scalingFactor, float(buffer[3]) * scalingFactor; 
                             componentAngle = float(buffer[4])
                             componentName = buffer[6]
                             caseName = ''
@@ -76,7 +78,26 @@ class OdbPlusPlusv7FileLoader():
                             pinNumber = buffer[1]
                             pinCoordsKey = f'{buffer[2]} {buffer[3]}'
                             componentPinsDict[pinCoordsKey] = [componentName, pinNumber]
+
         return self.components, componentPinsDict
+    
+    def findComponentLayerScale(self):
+        '''
+        Shity workaround about the fact that components are scaled down by some unkown factor (or rather I cant find the way to find it in better way).
+        It iterates over the components file and finds maximum x coordinate of component. It is used to count scaling factor.
+        Returns maxX - biggest absolute value of all the coordintates
+        '''
+        with tarfile.open(self.filePath, 'r') as file:
+            maxX = float('-Inf')
+            for sideNumber, compomentFile in enumerate(self.componentsFilesList):
+                componentSide = 'B' if sideNumber == 0 else 'T'
+                with file.extractfile(compomentFile) as extractedFile:
+                    fileLines = (line.decode('utf-8').replace('\n', '') for line in extractedFile.readlines())
+                    for i, line in enumerate(fileLines):
+                        if '# CMP ' in line:
+                            buffer = next(fileLines).split(' ')
+                            maxX = max(maxX, abs(float(buffer[2])))
+        return maxX
     
     def getHoles(self):
         '''
@@ -101,6 +122,10 @@ class OdbPlusPlusv7FileLoader():
                             buffer = buffer.split(',')[0]
                             nameID = buffer.split('=')[1]
                             netName = holeNamesDict[nameID]
+
+                            ## skip VIA's
+                            if 'VIA' in netName.upper():
+                                continue
 
                             if netName not in self.holes:                                
                                 self.holes[netName] = []
@@ -158,7 +183,7 @@ class OdbPlusPlusv7FileLoader():
                         if shape == 'A':
                             point1 = float(buffer[1]), float(buffer[2])
                             point2 = float(buffer[3]), float(buffer[4])
-                            point3 = float(buffer[4]), float(buffer[5])
+                            point3 = float(buffer[5]), float(buffer[6])
                             self.boardOutlines['ARCS'].append([point1, point2, point3])
                         elif shape == 'L':
                             point1 = float(buffer[1]), float(buffer[2])
@@ -176,11 +201,13 @@ class OdbPlusPlusv7FileLoader():
             
 if __name__ == '__main__':
     a = OdbPlusPlusv7FileLoader()
-    a.getFile('odb_15020617_01.tgz')
+    a.getFile('odbv7-1.tgz')
     a.getBoardOutlines()
     a.getHoles()
-    _, pins = a.getComponents()
+    maxX = a.findComponentLayerScale()
+    scalingFactor = a.boardOutlines['AREA'][1][0] / maxX
+    _, pins = a.getComponents(maxX=scalingFactor)
     a.getNets(pins)
 
     b = OdbPlusPlusv7FileLoader()
-    b.loadSchematic('odb_15020617_01.tgz')
+    b.loadSchematic('odbv7-1.tgz')
