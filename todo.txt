@@ -1,0 +1,46 @@
+Draw point on board when drag rotate
+display cursor outline when button is pressed and cursor stays in place
+move + zoom together
+
+IF MARKER IS OUTSIDE SCREEN THEN MOVE THE BOARD
+
+-----------------------------
+[done] fix panel bigger than layer by changing basescale *= 0.8
+[done] Label with Currently drawn side
+[done] change drag rotate from x to normal vector around centre of the canvas
+[done] Settings subwindow:
+		custom scale for components
+		force constant scale for holes
+		inverseX axis on T or B
+		custom testpoint prefix
+[done] Disable buttons if there is no board
+[done] fix reading cerm and core file
+[done] Bind keys to buttons
+[done] Caclulate middle point of group of holes and draw there a marker
+[done] Zoom related to the cursor position
+[done] Add about window
+[done] Refactor and despaghettify moveVector (moveVector is no longer used as a separate variable for moving layer. Its updtaed in only 1 place of engine)
+[done] Reduce twice search for marker only for cases when board is zoomed
+[done] mark components of the nets
+[done] add clear drawn net
+[done] add reset netTree button
+[done] add hints on buttons when cursor is on them for some time
+[done] bugfix - zoom mode and scroll lists make board scroll
+[done] bugfix - default view no longer makes board alternate between 2 positions and proper centers the board
+[done] finding component by name also expands first level of netTree
+[done] bugfix - searching for not exisitng component no longer changes drawn side
+[done] bugfix - closing open file window without selecting file no longer clears component list and treeview
+[done] bugfix - sometimes closing settings window asks for opening file (by moving opening file to separate method)
+[done] change ctrl to shift for zooming out
+[done] bugfix - collapse tree opens itself again after moving mouse
+[done] bugfix - wallbox som.gcd was a new type of gcd and so the whole gcd loader was reworked no to rely on hardcoded sections of data
+[done] selected items of treeview are green
+[done] netTree scrolls itself to selected net
+[done] added tabular display of selected component pins and nets that they belong to
+[done] clicking on the row in the table opens selected net in netTree
+[done] find from entry -> 
+
+
+
+
+
