@@ -5,9 +5,11 @@ class OdbPlusPlusv7FileLoader():
     CIRCLE_DIMENSIONS = [(0.050, 0.050), (0.025, 0.025)]
     RECTANGLE_DIMENSIONS = [(-0.020, -0.016), (0.020, 0.016)] #[(0.039, 0.039), (0.013, 0.013)]
 
-    def __init__(self):
+    def __init__(self, testPointPrefix='TP'):
         '''
-        Creates OdbPlusPlusv7FileLoader instance. Attributes:
+        Creates OdbPlusPlusv7FileLoader instance. 
+            testPointPrefix -> unique string common for all testpoints
+        Attributes:
             self.components - dict of components (componentName: [(x, y), side, case])
             self.holes - dict of TH holes (componentName: [(x, y), ...])
             self.nets - dict of nets (netName:{component:[pins]})
@@ -17,6 +19,7 @@ class OdbPlusPlusv7FileLoader():
         self.holes ={}
         self.nets = {}
         self.boardOutlines = {'AREA':[], 'LINES':[], 'ARCS':[]}
+        self.testpointPrefix = testPointPrefix
 
     def loadSchematic(self, name, path='Schematic'):
         '''
@@ -26,7 +29,7 @@ class OdbPlusPlusv7FileLoader():
         self.getFile(name, path)        
         boardOutlines = self.getBoardOutlines()
         maxX = self.findComponentLayerScale()
-        scalingFactor = boardOutlines['AREA'][1][0] / maxX      
+        scalingFactor = boardOutlines['AREA'][1][0] / maxX if 'profile' not in self.dimensionFile else 1
         components, pins = self.getComponents(scalingFactor=scalingFactor)
         nets = self.getNets(pins)
         holes = self.getHoles()
@@ -38,14 +41,34 @@ class OdbPlusPlusv7FileLoader():
         Sets self.filePath to chosen file and sets location of files with net list, components, holes and dimensions
         '''
         self.filePath = os.path.join(os.getcwd(), path, name)
-        self.netListFile = 'odbjob_v7/steps/stp/netlists/cadnet/netlist'
-        self.componentsFilesList = ['odbjob_v7/steps/stp/layers/comp_+_bot/components', 'odbjob_v7/steps/stp/layers/comp_+_top/components']
-        self.holesFile = 'odbjob_v7/steps/stp/layers/drill/features'
-        self.dimensionFile = 'odbjob_v7/steps/stp/layers/outline/features'
+        with tarfile.open(self.filePath, 'r') as file:
+            self.tarNames = file.getnames()
 
-    def getComponents(self, scalingFactor=1, testPointChars='TP'):
+        ## dict with partial path to needed files
+        filesDict = {'netlists/cadnet/netlist':None,        # netlist file
+                     'layers/comp_+_bot/components':None,   # components files
+                     'layers/comp_+_top/components':None,
+                     'layers/drill/features':None,          # holes file
+                     'layers/outline/features':None,        # board dimension file
+                     '/profile':None
+                     }
+        
+        ## get path by matching partial path
+        for fileSubstring in filesDict:
+            for tarName in self.tarNames:
+                if fileSubstring in tarName:
+                    filesDict[fileSubstring] = tarName
+                    break
+
+        ## save needed paths to variables
+        self.netListFile = filesDict['netlists/cadnet/netlist']
+        self.componentsFilesList = [filesDict['layers/comp_+_bot/components'], filesDict['layers/comp_+_top/components']]
+        self.holesFile = filesDict['layers/drill/features']
+        self.dimensionFile = filesDict['layers/outline/features'] or filesDict['/profile']
+
+    def getComponents(self, scalingFactor=1):
         '''
-        Opens files inside .tgz file. Extracts data of components from 'odbjob_v7/steps/stp/layers/comp_+_bot/components' and 'odbjob_v7/steps/stp/layers/comp_+_top/components'.
+        Opens files inside .tgz file. Extracts data of components from '.../layers/comp_+_bot/components' and 'odbjob_v7/steps/stp/layers/comp_+_top/components'.
             testPointChars - string that is common for all testpoints
 
         Returns: 
@@ -54,9 +77,12 @@ class OdbPlusPlusv7FileLoader():
         '''
         with tarfile.open(self.filePath, 'r') as file:
             componentPinsDict = {}
-            for sideNumber, compomentFile in enumerate(self.componentsFilesList):
-                componentSide = 'B' if sideNumber == 0 else 'T'
-                with file.extractfile(compomentFile) as extractedFile:
+            for sideNumber, componentFile in enumerate(self.componentsFilesList):
+                componentSide = 'B' if sideNumber == 0 else 'T'                
+                ## file not present
+                if not componentFile:
+                    continue 
+                with file.extractfile(componentFile) as extractedFile:
                     fileLines = (line.decode('utf-8').replace('\n', '') for line in extractedFile.readlines())
                     for i, line in enumerate(fileLines):
                         if '# CMP ' in line:
@@ -65,43 +91,50 @@ class OdbPlusPlusv7FileLoader():
                             componentAngle = float(buffer[4])
                             componentName = buffer[6]
                             caseName = ''
-                            if testPointChars in componentName:
+                            if self.testpointPrefix in componentName:
                                 caseShape = 'CIRCLE'
                                 caseDimensions = OdbPlusPlusv7FileLoader.CIRCLE_DIMENSIONS
                             else:
                                 caseShape = 'RECT'
                                 caseDimensions = OdbPlusPlusv7FileLoader.RECTANGLE_DIMENSIONS
-                                caseData = [caseName, caseShape] + caseDimensions
+                            caseData = [caseName, caseShape] + caseDimensions
                             self.components[componentName] = [componentCoords, componentSide, componentAngle, caseData]
                         elif 'TOP' in line:
                             buffer = line.split(' ')
                             pinNumber = buffer[1]
-                            pinCoordsKey = f'{buffer[2]} {buffer[3]}'
-                            componentPinsDict[pinCoordsKey] = [componentName, pinNumber]
+                            try:
+                                pinCoordsKey = f'{buffer[2]} {buffer[3]}'
+                                componentPinsDict[pinCoordsKey] = [componentName, pinNumber]
+                            except IndexError:
+                                pass
 
         return self.components, componentPinsDict
     
     def findComponentLayerScale(self):
         '''
         Shity workaround about the fact that components are scaled down by some unkown factor (or rather I cant find the way to find it in better way).
-        It iterates over the components file and finds maximum x coordinate of component. It is used to count scaling factor.
-        Returns maxX - biggest absolute value of all the coordintates
+        It iterates over the components file and finds minimum and maximum value of X coordinate. It is used to caclulate scaling factor.
+        Returns abs(maxX - minX) - value close to the components layer width
         '''
         with tarfile.open(self.filePath, 'r') as file:
             maxX = float('-Inf')
-            for sideNumber, compomentFile in enumerate(self.componentsFilesList):
-                componentSide = 'B' if sideNumber == 0 else 'T'
-                with file.extractfile(compomentFile) as extractedFile:
+            minX = float('Inf')
+            for componentFile in self.componentsFilesList:
+                ## file not present
+                if not componentFile:
+                    continue 
+                with file.extractfile(componentFile) as extractedFile:
                     fileLines = (line.decode('utf-8').replace('\n', '') for line in extractedFile.readlines())
                     for i, line in enumerate(fileLines):
                         if '# CMP ' in line:
                             buffer = next(fileLines).split(' ')
-                            maxX = max(maxX, abs(float(buffer[2])))
-        return maxX
+                            maxX = max(maxX, float(buffer[2]))
+                            minX = min(minX, float(buffer[2]))
+        return abs(maxX - minX)
     
     def getHoles(self):
         '''
-        Gets holes from 'odbjob_v7/steps/stp/layers/drill/features' file of .tgz.
+        Gets holes from '.../layers/drill/features' file of .tgz.
         Returns dict of holes (holeName: [(x1, y1), (x2, y2)...])
         '''
         with tarfile.open(self.filePath, 'r') as file:
@@ -119,12 +152,14 @@ class OdbPlusPlusv7FileLoader():
                             buffer = line.split(' ')
                             holeCoords = float(buffer[1]), float(buffer[2])
                             buffer = buffer[-1].split(';')[1]
-                            buffer = buffer.split(',')[0]
-                            nameID = buffer.split('=')[1]
+
+                            ## assumed that .drill is always "1"
+                            netType, drillType = buffer.split(',')[:2]
+                            nameID = netType.split('=')[1]
                             netName = holeNamesDict[nameID]
 
-                            ## skip VIA's
-                            if 'VIA' in netName.upper():
+                            ## 1=2 -> .drill=via, 1=1 ->.drill=not plated
+                            if drillType in ('1=2','1=1') or 'VIA' in netName:
                                 continue
 
                             if netName not in self.holes:                                
@@ -134,7 +169,7 @@ class OdbPlusPlusv7FileLoader():
     
     def getNets(self, componentPins):
         '''
-        Gets components from 'odbjob_v7/steps/stp/netlists/cadnet/netlist'. Use after getComponents method and pass componentPins from getComponents as input
+        Gets components from '.../netlists/cadnet/netlist'. Use after getComponents method and pass componentPins from getComponents as input
         Returns dict of nets (netName:{component:[pins]})
         '''
         with tarfile.open(self.filePath, 'r') as file:
@@ -167,47 +202,92 @@ class OdbPlusPlusv7FileLoader():
 
     def getBoardOutlines(self):
         '''
-        Opens file 'odbjob_v7/steps/stp/layers/outline/features' inside .tgz file and gets board shape data.
+        Opens file '.../layers/outline/features' or '.../profile' inside .tgz file and gets board shape data.
         Returns dict {'AREA':[(x1, y1), (x2, y2)], 'LINES':[[(x11, y11), (x12, y12)], [(x21, y21), (x22, y22)], ...], 'ARCS':[[(x11, y11), (x12, y12), (x13, y13)], ...]}
+        '''
+        if 'profile' in self.dimensionFile:
+            minX, minY, maxX, maxY = self.extractProfileFile()
+        else:
+            with tarfile.open(self.filePath, 'r') as file:
+                with file.extractfile(self.dimensionFile) as outlineFile:
+                    fileLines = (line.decode('utf-8').replace('\n', '') for line in outlineFile.readlines())
+                    
+                    minX, minY = float('Inf'), float('Inf')
+                    maxX, maxY = float('-Inf'), float('-Inf')
+                    for line in fileLines:
+                        if line and line[0] in ('A', 'L'):
+                            buffer = line.split(' ')
+                            shape = buffer[0]
+                            if shape == 'A':
+                                point1 = float(buffer[1]), float(buffer[2])
+                                point2 = float(buffer[3]), float(buffer[4])
+                                point3 = float(buffer[5]), float(buffer[6])
+                                self.boardOutlines['ARCS'].append([point1, point2, point3])
+                            elif shape == 'L':
+                                point1 = float(buffer[1]), float(buffer[2])
+                                point2 = float(buffer[3]), float(buffer[4])
+                                self.boardOutlines['LINES'].append([point1, point2])
+
+                                minX = min(minX, point1[0], point2[0])
+                                maxX = max(maxX, point1[0], point2[0])
+                                minY = min(minY, point1[1], point2[1])
+                                maxY = max(maxY, point1[1], point2[1])
+
+        self.boardOutlines['AREA'] = [(minX, minY), (maxX, maxY)]
+
+        return self.boardOutlines
+    
+    def extractProfileFile(self):
+        '''
+        Opens file '.../profile' inside .tgz file and gets board shape data.
+        Returns minX, minY, maxX, maxY
         '''
         with tarfile.open(self.filePath, 'r') as file:
             with file.extractfile(self.dimensionFile) as outlineFile:
                 fileLines = (line.decode('utf-8').replace('\n', '') for line in outlineFile.readlines())
-                
+
                 minX, minY = float('Inf'), float('Inf')
                 maxX, maxY = float('-Inf'), float('-Inf')
+                pointCoordsQueue = []
                 for line in fileLines:
-                    if line and line[0] in ('A', 'L'):
+                    if line and line[0] in ('O',):
                         buffer = line.split(' ')
                         shape = buffer[0]
-                        if shape == 'A':
-                            point1 = float(buffer[1]), float(buffer[2])
-                            point2 = float(buffer[3]), float(buffer[4])
-                            point3 = float(buffer[5]), float(buffer[6])
+                        if shape == 'OC':
+                            point1 = pointCoordsQueue.pop(0)
+                            point2 = float(buffer[1]), float(buffer[2])
+                            point3 = float(buffer[3]), float(buffer[4])
                             self.boardOutlines['ARCS'].append([point1, point2, point3])
-                        elif shape == 'L':
-                            point1 = float(buffer[1]), float(buffer[2])
-                            point2 = float(buffer[3]), float(buffer[4])
-                            self.boardOutlines['LINES'].append([point1, point2])
 
-                            minX = min(minX, point1[0], point2[0])
-                            maxX = max(maxX, point1[0], point2[0])
-                            minY = min(minY, point1[1], point2[1])
-                            maxY = max(maxY, point1[1], point2[1])
+                            pointCoordsQueue.append(point3)
+                        else:
+                            try:
+                                point = float(buffer[1]), float(buffer[2])
+                            except IndexError:
+                                continue
+                            pointCoordsQueue.append(point)
+                            if len(pointCoordsQueue) == 2:
+                                point1, point2 = pointCoordsQueue
+                                self.boardOutlines['LINES'].append([point1, point2])
 
-                self.boardOutlines['AREA'] = [(minX, minY), (maxX, maxY)]
-
-        return self.boardOutlines
+                                minX = min(minX, point1[0], point2[0])
+                                maxX = max(maxX, point1[0], point2[0])
+                                minY = min(minY, point1[1], point2[1])
+                                maxY = max(maxY, point1[1], point2[1])
+                                pointCoordsQueue.pop(0)
+        return minX, minY, maxX, maxY                     
             
 if __name__ == '__main__':
     a = OdbPlusPlusv7FileLoader()
-    a.getFile('odbv7-1.tgz')
+    a.getFile('odb_15020617_01.tgz') #660891125.tgz
     a.getBoardOutlines()
     a.getHoles()
     maxX = a.findComponentLayerScale()
     scalingFactor = a.boardOutlines['AREA'][1][0] / maxX
-    _, pins = a.getComponents(maxX=scalingFactor)
+    _, pins = a.getComponents(scalingFactor=scalingFactor)
     a.getNets(pins)
+    
+    print(a.boardOutlines['AREA'], scalingFactor)
 
-    b = OdbPlusPlusv7FileLoader()
-    b.loadSchematic('odbv7-1.tgz')
+    #b = OdbPlusPlusv7FileLoader()
+    #b.loadSchematic('odb_15020617_01.tgz')

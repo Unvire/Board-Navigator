@@ -4,6 +4,7 @@ from tkinter import messagebox, filedialog
 from tkinter import font
 from PIL import Image, ImageTk
 from idlelib.tooltip import Hovertip
+from datetime import datetime
 import os
 import pygame
 import keyboard
@@ -507,7 +508,14 @@ class BoardNavigator(tk.Tk):
 
         ## process schematic file
         if self.filePath:
-            self.components, self.nets, self.holes, self.boardOutlines, _, _ = schematicLoader.SchematicLoader.loadSchematic(self.filePath)
+            try:
+                self.components, self.nets, self.holes, self.boardOutlines, _, _ = schematicLoader.SchematicLoader.loadSchematic(self.filePath, testPointPrefix)
+            except (TypeError, IndexError, ValueError) as e:
+                currentDateTime = datetime.now()
+                currentDateTime = currentDateTime.strftime("%d.%m.%Y_%H-%M-%S")
+                with open(f'Crash {currentDateTime}.txt', 'w') as log:
+                    message = f'Error loading file: {self.filePath}.\nReason:{e.args}'
+                    log.write(message)
             self.board = drawBoardEngine.Board(self.components, self.nets, self.holes, self.boardOutlines, forceHoles, testPointPrefix)
             self.board.setComponentsCustomScale(self.componentsCustomScale)
 
@@ -625,9 +633,8 @@ class BoardNavigator(tk.Tk):
 
     def clearNet(self):
         '''
-        Clears marked net components by overwriting self.netComponents with [] and unhighlights current selected net
+        Clears marked net components by overwriting self.netComponents with []
         '''
-        self.collapseNetTree()
         if self.board:
             self.updateBoardLayer(netComponents=['reset'])
 
@@ -850,7 +857,7 @@ class BoardNavigator(tk.Tk):
             self.componentPinsTree.insert('', tk.END, values=(pin, net))
         
         ## change label text
-        self.componentPinsLabel['text'] = f'Pins of selected component ({componentName})'
+        self.componentPinsLabel['text'] = f'Pins of selected component ({componentName[:10]})'
     
     def componentPinsTreeClicked(self):
         '''

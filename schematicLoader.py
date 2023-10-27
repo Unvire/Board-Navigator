@@ -5,10 +5,10 @@ import os
 
 class SchematicLoader():
     @staticmethod
-    def loadSchematic(name, path='Schematic'):
+    def loadSchematic(name, path='Schematic', testPointPrefix='TP'):
         filePath = os.path.join(os.getcwd(), path, name)
         if '.tgz' in name:
-            schematic = obpPlusPlusv7FileLoader.OdbPlusPlusv7FileLoader()
+            schematic = obpPlusPlusv7FileLoader.OdbPlusPlusv7FileLoader(testPointPrefix)
             return schematic.loadSchematic(name, path)
         else:
             with open(filePath, 'r') as file:

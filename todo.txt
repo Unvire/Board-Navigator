@@ -4,6 +4,9 @@ move + zoom together
 
 IF MARKER IS OUTSIDE SCREEN THEN MOVE THE BOARD
 
+rescaling tgz-s
+crash logs
+
 -----------------------------
 [done] fix panel bigger than layer by changing basescale *= 0.8
 [done] Label with Currently drawn side
@@ -39,6 +42,8 @@ IF MARKER IS OUTSIDE SCREEN THEN MOVE THE BOARD
 [done] added tabular display of selected component pins and nets that they belong to
 [done] clicking on the row in the table opens selected net in netTree
 [done] find from entry -> 
+
+
 
 
 

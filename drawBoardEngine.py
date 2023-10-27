@@ -586,7 +586,7 @@ if __name__ == '__main__':
     coords = 0,0
 
     ## load components data cad file (tgz)
-    components, nets, holes, boardOutlines, _, _ = schematicLoader.SchematicLoader.loadSchematic('odbv7-1.tgz')
+    components, nets, holes, boardOutlines, _, _ = schematicLoader.SchematicLoader.loadSchematic('odb_15020617_01.tgz')
     board = Board(components, nets, holes, boardOutlines, 'TP')
     board.setComponentsCustomScale(40)
 
