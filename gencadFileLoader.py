@@ -208,7 +208,7 @@ class GenCADLoader():
             elif buffer[0] == 'INSERT':
                 mountType = buffer[1]
             elif buffer[0] == 'PIN':
-                holesCoords.append(tuple([float(buffer[3]), float(buffer[4])]))
+                holesCoords.append(tuple([float(buffer[-5]), float(buffer[-4])]))
             
             i += 1
 
